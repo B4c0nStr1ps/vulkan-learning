@@ -9,4 +9,5 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 
 #Create the target.
-add_executable(vulkan-learning src/main.cpp)
+add_executable(vulkan-learning src/main.cpp src/vulkan_api.h src/vulkan_api.cpp)
+target_include_directories(vulkan-learning PRIVATE "external")
