@@ -4,6 +4,8 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <vector>
+#include "platform.h"
 
 namespace gfx::vk_api {
 
@@ -24,12 +26,13 @@ vk_function_definition(vkGetInstanceProcAddr);
 // and allow creation of a Vulkan Instance.                     //
 // ************************************************************ //
 vk_function_definition(vkCreateInstance);
+vk_function_definition(vkEnumerateInstanceExtensionProperties);
 
 // ************************************************************ //
-// Global level functions                                       //
+// Instance level functions                                     //
 //                                                              //
-// They allow checking what instance extensions are available   //
-// and allow creation of a Vulkan Instance.                     //
+// These functions allow for device queries and creation.       //
+// They help choose which device is well suited for our needs.  //
 // ************************************************************ //
 vk_function_definition(vkEnumeratePhysicalDevices);
 vk_function_definition(vkGetPhysicalDeviceProperties);
@@ -38,17 +41,37 @@ vk_function_definition(vkGetPhysicalDeviceQueueFamilyProperties);
 vk_function_definition(vkCreateDevice);
 vk_function_definition(vkGetDeviceProcAddr);
 vk_function_definition(vkDestroyInstance);
+vk_function_definition(vkEnumerateDeviceExtensionProperties);
+// Swap chain extensions.
+vk_function_definition(vkGetPhysicalDeviceSurfaceSupportKHR);
+vk_function_definition(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
+vk_function_definition(vkGetPhysicalDeviceSurfaceFormatsKHR);
+vk_function_definition(vkGetPhysicalDeviceSurfacePresentModesKHR);
+vk_function_definition(vkDestroySurfaceKHR);
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+vk_function_definition(vkCreateWin32SurfaceKHR);
+#elif defined(VK_USE_PLATFORM_XCB_KHR)
+vk_function_definition(vkCreateXcbSurfaceKHR);
+#elif defined(VK_USE_PLATFORM_XLIB_KHR)
+vk_function_definition(vkCreateXlibSurfaceKHR);
+#endif
 
 struct QueueFamilyIndices {
   std::optional<uint32_t> graphics_family;
+  std::optional<uint32_t> present_family;
 
-  bool is_complete() { return graphics_family.has_value(); }
+  bool is_complete()
+  {
+    return graphics_family.has_value() && present_family.has_value();
+  }
 };
 
 struct VulkanDevice {
   VkPhysicalDevice physical_device;
   VkDevice logical_device;
   VkQueue graphics_queue;
+  VkQueue present_queue;
+  VkSurfaceKHR surface;
 
   // ************************************************************ //
   // Device level functions                                       //
@@ -58,17 +81,44 @@ struct VulkanDevice {
   vk_device_function_definition(vkGetDeviceQueue);
   vk_device_function_definition(vkDeviceWaitIdle);
   vk_device_function_definition(vkDestroyDevice);
+
+  vk_device_function_definition(vkCreateSemaphore);
+  vk_device_function_definition(vkCreateCommandPool);
+  vk_device_function_definition(vkAllocateCommandBuffers);
+  vk_device_function_definition(vkBeginCommandBuffer);
+  vk_device_function_definition(vkCmdPipelineBarrier);
+  vk_device_function_definition(vkCmdClearColorImage);
+  vk_device_function_definition(vkEndCommandBuffer);
+  vk_device_function_definition(vkQueueSubmit);
+  vk_device_function_definition(vkFreeCommandBuffers);
+  vk_device_function_definition(vkDestroyCommandPool);
+  vk_device_function_definition(vkDestroySemaphore);
+  // Swap chain extensions.
+  vk_device_function_definition(vkCreateSwapchainKHR);
+  vk_device_function_definition(vkGetSwapchainImagesKHR);
+  vk_device_function_definition(vkAcquireNextImageKHR);
+  vk_device_function_definition(vkQueuePresentKHR);
+  vk_device_function_definition(vkDestroySwapchainKHR);
 };
 
 // Api.
 auto initialize() -> void;
 auto destroy() -> void;
-auto create_device() -> VulkanDevice;
-auto is_physical_device_suitable(VkPhysicalDevice device) -> bool;
+auto create_device(const os::WindowParameters& window) -> VulkanDevice;
+auto is_physical_device_suitable_for_surface(VkPhysicalDevice device,
+                                             VkSurfaceKHR surface) -> bool;
+auto check_physical_device_extension_support(VkPhysicalDevice device) -> bool;
 auto enumerate_all_physical_devices() -> void;
-auto pick_best_physical_device() -> VkPhysicalDevice;
-auto rate_physical_device_suitability(VkPhysicalDevice device) -> int;
-auto find_queue_families(VkPhysicalDevice device) -> QueueFamilyIndices;
+auto pick_best_physical_device_for_surface(VkSurfaceKHR surface)
+    -> VkPhysicalDevice;
+auto rate_physical_device_suitability(VkPhysicalDevice device,
+                                      VkSurfaceKHR surface) -> int;
+auto find_queue_families(VkPhysicalDevice device, VkSurfaceKHR surface)
+    -> QueueFamilyIndices;
+auto check_extension_availability(
+    const char* extension_name,
+    const std::vector<VkExtensionProperties>& available_extensions) -> bool;
+auto create_window_surface(os::WindowParameters window) -> VkSurfaceKHR;
 
 }  // namespace gfx::vk_api
 
@@ -108,9 +158,10 @@ class Device {
 };
 
 // api.
+
 auto load_backend() -> void;
 auto unload_backend() -> void;
-auto create_device() -> Device;
+auto create_device(const os::WindowParameters& window) -> Device;
 
 }  // namespace gfx
 

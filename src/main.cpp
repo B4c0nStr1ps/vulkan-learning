@@ -8,11 +8,16 @@ int main()
   gfx::load_backend();
   std::cout << "Vulkan backend loaded.\n";
 
+  // Create the platform window.
+
+  os::Window window;
+  window.create("Learning vulkan");
+
   std::cout << "\nEnumerate all physical devices.\n";
   gfx::vk_api::enumerate_all_physical_devices();
 
   std::cout << "\nCreate the device.\n";
-  gfx::Device device = gfx::create_device();
+  gfx::Device device = gfx::create_device(window.get_parameters());
   gfx::print_device_name(device);
 
   std::cout << "\n\n*********LOOP*********\n\n\n";
