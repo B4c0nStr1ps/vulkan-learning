@@ -13,7 +13,7 @@ int main()
 
   std::cout << "\nCreate the device.\n";
   gfx::Device device = gfx::create_device();
-  device.print_name();
+  gfx::print_device_name(device);
 
   std::cout << "\n\n*********LOOP*********\n\n\n";
 

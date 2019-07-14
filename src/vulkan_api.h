@@ -68,13 +68,6 @@ auto find_queue_families(VkPhysicalDevice device) -> QueueFamilyIndices;
 
 namespace gfx {
 
-auto print_device_name(VkPhysicalDevice device) -> void
-{
-  VkPhysicalDeviceProperties device_properties;
-  vkGetPhysicalDeviceProperties(device, &device_properties);
-  std::cout << "Device name: " << device_properties.deviceName << "\n";
-}
-
 class Device {
  public:
   template <typename T>
@@ -82,12 +75,12 @@ class Device {
   {
   }
 
-  auto print_name() -> void { self_->print_name_(); }
+  friend auto print_device_name(const Device& device) -> void;
 
  private:
   struct Concept {
     virtual ~Concept() = default;
-    auto virtual print_name_() -> void = 0;
+    virtual auto print_name_() -> void = 0;
   };
 
   template <typename T>
@@ -109,3 +102,9 @@ auto unload_backend() -> void;
 auto create_device() -> Device;
 
 }  // namespace gfx
+
+namespace gfx {
+
+auto print_device_name(VkPhysicalDevice device) -> void;
+
+}

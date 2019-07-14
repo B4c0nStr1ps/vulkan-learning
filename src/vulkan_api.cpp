@@ -43,6 +43,11 @@ VkInstance VK_INSTANCE;
 //  std::cout << "Device name: " << device_properties.deviceName << "\n";
 //}
 
+auto gfx::print_device_name(const gfx::Device& device) -> void
+{
+  device.self_->print_name_();
+}
+
 auto gfx::vk_api::initialize() -> void
 {
   // Step 1: Load Vulkan library:
@@ -259,3 +264,11 @@ auto gfx::load_backend() -> void { vk_api::initialize(); }
 auto gfx::unload_backend() -> void { vk_api::destroy(); }
 
 auto gfx::create_device() -> Device { return vk_api::create_device(); }
+
+auto gfx::print_device_name(VkPhysicalDevice device) -> void
+{
+  // std::cout << "Device\n";
+  VkPhysicalDeviceProperties device_properties;
+  vk_api::vkGetPhysicalDeviceProperties(device, &device_properties);
+  std::cout << "Device name: " << device_properties.deviceName << "\n";
+}
