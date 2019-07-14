@@ -8,6 +8,7 @@
 namespace gfx::vk_api {
 
 #define vk_function_definition(fun) inline PFN_##fun fun
+#define vk_device_function_definition(fun) PFN_##fun fun
 
 // Vulkan functions definitions.
 // ************************************************************ //
@@ -37,16 +38,6 @@ vk_function_definition(vkGetPhysicalDeviceQueueFamilyProperties);
 vk_function_definition(vkCreateDevice);
 vk_function_definition(vkGetDeviceProcAddr);
 vk_function_definition(vkDestroyInstance);
-// ************************************************************ //
-// Device level functions                                       //
-//                                                              //
-// These functions are used mainly for drawing                  //
-// ************************************************************ //
-vk_function_definition(vkGetDeviceQueue);
-vk_function_definition(vkDeviceWaitIdle);
-vk_function_definition(vkDestroyDevice);
-
-#undef vk_function_definition
 
 struct QueueFamilyIndices {
   std::optional<uint32_t> graphics_family;
@@ -54,10 +45,25 @@ struct QueueFamilyIndices {
   bool is_complete() { return graphics_family.has_value(); }
 };
 
+struct VulkanDevice {
+  VkPhysicalDevice physical_device;
+  VkDevice logical_device;
+  VkQueue graphics_queue;
+
+  // ************************************************************ //
+  // Device level functions                                       //
+  //                                                              //
+  // These functions are used mainly for drawing                  //
+  // ************************************************************ //
+  vk_device_function_definition(vkGetDeviceQueue);
+  vk_device_function_definition(vkDeviceWaitIdle);
+  vk_device_function_definition(vkDestroyDevice);
+};
+
 // Api.
 auto initialize() -> void;
 auto destroy() -> void;
-auto create_device() -> VkPhysicalDevice;
+auto create_device() -> VulkanDevice;
 auto is_physical_device_suitable(VkPhysicalDevice device) -> bool;
 auto enumerate_all_physical_devices() -> void;
 auto pick_best_physical_device() -> VkPhysicalDevice;
@@ -65,6 +71,8 @@ auto rate_physical_device_suitability(VkPhysicalDevice device) -> int;
 auto find_queue_families(VkPhysicalDevice device) -> QueueFamilyIndices;
 
 }  // namespace gfx::vk_api
+
+#undef vk_function_definition
 
 namespace gfx {
 
@@ -76,11 +84,13 @@ class Device {
   }
 
   friend auto print_device_name(const Device& device) -> void;
+  friend auto destroy_device(const Device& device) -> void;
 
  private:
   struct Concept {
     virtual ~Concept() = default;
     virtual auto print_name_() -> void = 0;
+    virtual auto destroy_() -> void = 0;
   };
 
   template <typename T>
@@ -89,6 +99,7 @@ class Device {
     Model(T user_model) : user_model_(user_model) {}
 
     auto print_name_() -> void override { print_device_name(user_model_); }
+    auto destroy_() -> void override { destroy_device(user_model_); }
 
     T user_model_;
   };
@@ -105,6 +116,7 @@ auto create_device() -> Device;
 
 namespace gfx {
 
-auto print_device_name(VkPhysicalDevice device) -> void;
+auto print_device_name(vk_api::VulkanDevice device) -> void;
+auto destroy_device(vk_api::VulkanDevice device) -> void;
 
-}
+}  // namespace gfx

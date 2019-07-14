@@ -43,11 +43,6 @@ VkInstance VK_INSTANCE;
 //  std::cout << "Device name: " << device_properties.deviceName << "\n";
 //}
 
-auto gfx::print_device_name(const gfx::Device& device) -> void
-{
-  device.self_->print_name_();
-}
-
 auto gfx::vk_api::initialize() -> void
 {
   // Step 1: Load Vulkan library:
@@ -120,10 +115,61 @@ auto gfx::vk_api::initialize() -> void
 
 auto gfx::vk_api::destroy() -> void { vkDestroyInstance(VK_INSTANCE, nullptr); }
 
-auto gfx::vk_api::create_device() -> VkPhysicalDevice
+auto gfx::vk_api::create_device() -> VulkanDevice
 {
   VkPhysicalDevice physical_device = pick_best_physical_device();
-  return physical_device;
+
+  QueueFamilyIndices indices = find_queue_families(physical_device);
+  float queue_priority = 1.0f;
+
+  // Specifying the queues to be created.
+  VkDeviceQueueCreateInfo queue_create_info = {};
+  queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  queue_create_info.queueFamilyIndex = indices.graphics_family.value();
+  queue_create_info.queueCount = 1;
+  queue_create_info.pQueuePriorities = &queue_priority;
+
+  // Specifying used device features.
+  VkPhysicalDeviceFeatures device_features = {};
+
+  // Creating the logical device.
+  VkDeviceCreateInfo create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  create_info.pQueueCreateInfos = &queue_create_info;
+  create_info.queueCreateInfoCount = 1;
+  create_info.pEnabledFeatures = &device_features;
+
+  VkDevice logical_device;
+  if (vkCreateDevice(physical_device, &create_info, nullptr, &logical_device) !=
+      VK_SUCCESS) {
+    std::cerr << "failed to create logical device!\n";
+    std::terminate();
+  }
+
+  VulkanDevice device = {physical_device, logical_device};
+
+  // Load Device-Level functions.
+
+#define vk_device_level_function(fun)                                       \
+  if (!(device.fun =                                                        \
+            (PFN_##fun)vkGetDeviceProcAddr(device.logical_device, #fun))) { \
+    std::cerr << "Could not load device level function: " << #fun << "!"    \
+              << std::endl;                                                 \
+    std::terminate();                                                       \
+  }
+
+  vk_device_level_function(vkGetDeviceQueue);
+  vk_device_level_function(vkDestroyDevice);
+  vk_device_level_function(vkDeviceWaitIdle);
+
+#undef vk_device_level_function
+
+  // Retrieving queue handles.
+  device.vkGetDeviceQueue(device.logical_device,
+                          indices.graphics_family.value(), 0,
+                          &device.graphics_queue);
+
+  return device;
 }
 
 auto gfx::vk_api::pick_best_physical_device() -> VkPhysicalDevice
@@ -265,10 +311,26 @@ auto gfx::unload_backend() -> void { vk_api::destroy(); }
 
 auto gfx::create_device() -> Device { return vk_api::create_device(); }
 
-auto gfx::print_device_name(VkPhysicalDevice device) -> void
+auto gfx::print_device_name(vk_api::VulkanDevice device) -> void
 {
-  // std::cout << "Device\n";
   VkPhysicalDeviceProperties device_properties;
-  vk_api::vkGetPhysicalDeviceProperties(device, &device_properties);
+  vk_api::vkGetPhysicalDeviceProperties(device.physical_device,
+                                        &device_properties);
   std::cout << "Device name: " << device_properties.deviceName << "\n";
+}
+
+auto gfx::destroy_device(vk_api::VulkanDevice device) -> void
+{
+  device.vkDestroyDevice(device.logical_device, nullptr);
+}
+
+auto gfx::print_device_name(const gfx::Device& device) -> void
+{
+  device.self_->print_name_();
+}
+
+auto gfx::destroy_device(const Device& device) -> void
+{
+  device.self_->destroy_();
+  std::cout << "Device destroyed.\n";
 }

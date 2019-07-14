@@ -17,6 +17,7 @@ int main()
 
   std::cout << "\n\n*********LOOP*********\n\n\n";
 
+  gfx::destroy_device(device);
   gfx::unload_backend();
   std::cout << "Vulkan backend unloaded.\n";
   return 0;
