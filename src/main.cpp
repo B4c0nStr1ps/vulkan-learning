@@ -20,6 +20,8 @@ int main()
   gfx::Device device = gfx::create_device(window.get_parameters());
   gfx::print_device_name(device);
 
+  gfx::create_swap_chain(device);
+
   std::cout << "\n\n*********LOOP*********\n\n\n";
 
   gfx::destroy_device(device);

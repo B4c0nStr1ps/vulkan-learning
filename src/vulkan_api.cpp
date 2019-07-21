@@ -211,7 +211,7 @@ auto gfx::vk_api::create_device(const os::WindowParameters& window)
   create_info.pEnabledFeatures = &device_features;
   create_info.enabledExtensionCount =
       static_cast<uint32_t>(DEVICE_EXTENSIONS.size());
-  create_info.ppEnabledExtensionNames = &DEVICE_EXTENSIONS[0];
+  create_info.ppEnabledExtensionNames = DEVICE_EXTENSIONS.data();
 
   if (vkCreateDevice(device.physical_device, &create_info, nullptr,
                      &device.logical_device) != VK_SUCCESS) {
@@ -258,7 +258,139 @@ auto gfx::vk_api::create_device(const os::WindowParameters& window)
   device.vkGetDeviceQueue(device.logical_device, indices.present_family.value(),
                           0, &device.present_queue);
 
+  // Create queue semapthores.
+  device.image_available_semaphore = create_semaphore(device);
+  device.rendering_finished_semaphore = create_semaphore(device);
+
   return device;
+}
+
+auto gfx::vk_api::create_device_swap_chain(VulkanDevice& device) -> void
+{
+  if (device.logical_device != VK_NULL_HANDLE) {
+    device.vkDeviceWaitIdle(device.logical_device);
+  }
+  /*
+   * Acquiring Surface Capabilities. Acquired capabilities contain important
+   * information about ranges (limits) that are supported by the swap chain,
+   * that is, minimal and maximal number of images, minimal and maximal
+   * dimensions of images
+   */
+  VkSurfaceCapabilitiesKHR surface_capabilities;
+  if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+          device.physical_device, device.surface, &surface_capabilities) !=
+      VK_SUCCESS) {
+    std::cerr << "Could not check presentation surface capabilities!"
+              << std::endl;
+    std::terminate();
+  }
+  // Acquiring Supported Surface Formats.
+  uint32_t formats_count;
+  if ((vkGetPhysicalDeviceSurfaceFormatsKHR(device.physical_device,
+                                            device.surface, &formats_count,
+                                            nullptr) != VK_SUCCESS) ||
+      (formats_count == 0)) {
+    std::cerr
+        << "Error occurred during presentation surface formats enumeration!"
+        << std::endl;
+    std::terminate();
+  }
+  std::vector<VkSurfaceFormatKHR> surface_formats(formats_count);
+  if (vkGetPhysicalDeviceSurfaceFormatsKHR(
+          device.physical_device, device.surface, &formats_count,
+          surface_formats.data()) != VK_SUCCESS) {
+    std::cerr
+        << "Error occurred during presentation surface formats enumeration!"
+        << std::endl;
+    std::terminate();
+  }
+
+  // Acquiring Supported Present Modes.
+  uint32_t present_modes_count;
+  if ((vkGetPhysicalDeviceSurfacePresentModesKHR(
+           device.physical_device, device.surface, &present_modes_count,
+           nullptr) != VK_SUCCESS) ||
+      (present_modes_count == 0)) {
+    std::cerr << "Error occurred during presentation surface present modes "
+                 "enumeration!"
+              << std::endl;
+    std::terminate();
+  }
+  std::vector<VkPresentModeKHR> present_modes(present_modes_count);
+  if (vkGetPhysicalDeviceSurfacePresentModesKHR(
+          device.physical_device, device.surface, &present_modes_count,
+          present_modes.data()) != VK_SUCCESS) {
+    std::cerr << "Error occurred during presentation surface present modes "
+                 "enumeration!"
+              << std::endl;
+    std::terminate();
+  }
+
+  // Selecting the Number of Swap Chain Images.
+  uint32_t desired_number_of_images =
+      get_swap_chain_num_images(surface_capabilities);
+  // Selecting a Format for Swap Chain Images.
+  VkSurfaceFormatKHR desired_format = get_swap_chain_format(surface_formats);
+  // Selecting the Size of the Swap Chain Images.
+  VkExtent2D desired_extent = get_swap_chain_extent(surface_capabilities);
+  // Selecting Swap Chain Usage Flags.
+  VkImageUsageFlags desired_usage =
+      get_swap_chain_usage_flags(surface_capabilities);
+  // Selecting Pre-Transformations.
+  VkSurfaceTransformFlagBitsKHR desired_transform =
+      get_swap_chain_transform(surface_capabilities);
+  // Selecting Presentation Mode.
+  VkPresentModeKHR desired_present_mode =
+      get_swap_chain_present_mode(present_modes);
+
+  VkSwapchainKHR old_swap_chain = device.swap_chain;
+
+  if (static_cast<int>(desired_usage) == -1) {
+    std::cerr << "Invalid swap chain desired usage." << std::endl;
+    std::terminate();
+  }
+  if (static_cast<int>(desired_present_mode) == -1) {
+    std::cerr << "Invalid swap chain desired present mode." << std::endl;
+    std::terminate();
+  }
+  if ((desired_extent.width == 0) || (desired_extent.height == 0)) {
+    // Current surface size is (0, 0) so we can't create a swap chain and render
+    // anything (CanRender == false) But we don't wont to kill the application
+    // as this situation may occur i.e. when window gets minimized
+    // TODO!.
+  }
+
+  VkSwapchainCreateInfoKHR swap_chain_create_info = {
+      VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,  // sType
+      nullptr,                                      // *pNext
+      0,                                            // flags
+      device.surface,                               // surface
+      desired_number_of_images,                     // minImageCount
+      desired_format.format,                        // imageFormat
+      desired_format.colorSpace,                    // imageColorSpace
+      desired_extent,                               // imageExtent
+      1,                                            // imageArrayLayers
+      desired_usage,                                // imageUsage
+      VK_SHARING_MODE_EXCLUSIVE,                    // imageSharingMode
+      0,                                            // queueFamilyIndexCount
+      nullptr,                                      // pQueueFamilyIndices
+      desired_transform,                            //  preTransform
+      VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,            // compositeAlpha
+      desired_present_mode,                         // presentMode
+      VK_TRUE,                                      // clipped
+      old_swap_chain                                // oldSwapchain
+  };
+
+  if (device.vkCreateSwapchainKHR(device.logical_device,
+                                  &swap_chain_create_info, nullptr,
+                                  &device.swap_chain) != VK_SUCCESS) {
+    std::cerr << "Could not create swap chain!" << std::endl;
+    std::terminate;
+  }
+  if (old_swap_chain != VK_NULL_HANDLE) {
+    device.vkDestroySwapchainKHR(device.logical_device, old_swap_chain,
+                                 nullptr);
+  }
 }
 
 auto gfx::vk_api::check_physical_device_extension_support(
@@ -490,6 +622,182 @@ auto gfx::vk_api::create_window_surface(os::WindowParameters window)
   return surface;
 }
 
+auto gfx::vk_api::create_semaphore(VulkanDevice& device) -> VkSemaphore
+{
+  VkSemaphoreCreateInfo semaphore_create_info = {
+      VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,  // sType
+      nullptr,                                  // pNext
+      0                                         // flags
+  };
+
+  VkSemaphore semaphore;
+
+  if (device.vkCreateSemaphore(device.logical_device, &semaphore_create_info,
+                               nullptr, &semaphore) != VK_SUCCESS) {
+    std::cerr << "Could not create semaphore!" << std::endl;
+    std::terminate();
+  }
+
+  return semaphore;
+}
+
+auto gfx::vk_api::get_swap_chain_num_images(
+    VkSurfaceCapabilitiesKHR& surface_capabilities) -> uint32_t
+{
+  // Set of images defined in a swap chain may not always be available for
+  // application to render to: One may be displayed and one may wait in a queue
+  // to be presented If application wants to use more images at the same time it
+  // must ask for more images
+  uint32_t image_count = surface_capabilities.minImageCount + 1;
+  if ((surface_capabilities.maxImageCount > 0) &&
+      (image_count > surface_capabilities.maxImageCount)) {
+    image_count = surface_capabilities.maxImageCount;
+  }
+  return image_count;
+}
+
+auto gfx::vk_api::get_swap_chain_extent(
+    VkSurfaceCapabilitiesKHR& surface_capabilities) -> VkExtent2D
+{
+  // Special value of surface extent is width == height == -1
+  // If this is so we define the size by ourselves but it must fit within
+  // defined confines
+  if (surface_capabilities.currentExtent.width == -1) {
+    VkExtent2D swap_chain_extent = {1920, 1080};
+    if (swap_chain_extent.width < surface_capabilities.minImageExtent.width) {
+      swap_chain_extent.width = surface_capabilities.minImageExtent.width;
+    }
+    if (swap_chain_extent.height < surface_capabilities.minImageExtent.height) {
+      swap_chain_extent.height = surface_capabilities.minImageExtent.height;
+    }
+    if (swap_chain_extent.width > surface_capabilities.maxImageExtent.width) {
+      swap_chain_extent.width = surface_capabilities.maxImageExtent.width;
+    }
+    if (swap_chain_extent.height > surface_capabilities.maxImageExtent.height) {
+      swap_chain_extent.height = surface_capabilities.maxImageExtent.height;
+    }
+    return swap_chain_extent;
+  }
+
+  // Most of the cases we define size of the swap_chain images equal to current
+  // window's size
+  return surface_capabilities.currentExtent;
+}
+
+auto gfx::vk_api::get_swap_chain_format(
+    std::vector<VkSurfaceFormatKHR>& surface_formats) -> VkSurfaceFormatKHR
+{
+  // If the list contains only one entry with undefined format
+  // it means that there are no preferred surface formats and any can be chosen
+  if ((surface_formats.size() == 1) &&
+      (surface_formats[0].format == VK_FORMAT_UNDEFINED)) {
+    return {VK_FORMAT_R8G8B8A8_UNORM, VK_COLORSPACE_SRGB_NONLINEAR_KHR};
+  }
+
+  // Check if list contains most widely used R8 G8 B8 A8 format
+  // with nonlinear color space
+  for (VkSurfaceFormatKHR& surface_format : surface_formats) {
+    if (surface_format.format == VK_FORMAT_R8G8B8A8_UNORM) {
+      return surface_format;
+    }
+  }
+
+  // Return the first format from the list
+  return surface_formats[0];
+}
+
+auto gfx::vk_api::get_swap_chain_usage_flags(
+    VkSurfaceCapabilitiesKHR& surface_capabilities) -> VkImageUsageFlags
+{
+  // Color attachment flag must always be supported
+  // We can define other usage flags but we always need to check if they are
+  // supported
+  if (surface_capabilities.supportedUsageFlags &
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+    return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+           VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  }
+  std::cerr << "VK_IMAGE_USAGE_TRANSFER_DST image usage is not supported by "
+               "the swap chain!"
+            << std::endl
+            << "Supported swap chain's image usages include:" << std::endl
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                    ? "    VK_IMAGE_USAGE_TRANSFER_SRC\n"
+                    : "")
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                    ? "    VK_IMAGE_USAGE_TRANSFER_DST\n"
+                    : "")
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_SAMPLED_BIT
+                    ? "    VK_IMAGE_USAGE_SAMPLED\n"
+                    : "")
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_STORAGE_BIT
+                    ? "    VK_IMAGE_USAGE_STORAGE\n"
+                    : "")
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                    ? "    VK_IMAGE_USAGE_COLOR_ATTACHMENT\n"
+                    : "")
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                    ? "    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT\n"
+                    : "")
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT
+                    ? "    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT\n"
+                    : "")
+            << (surface_capabilities.supportedUsageFlags &
+                        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
+                    ? "    VK_IMAGE_USAGE_INPUT_ATTACHMENT"
+                    : "")
+            << std::endl;
+  return static_cast<VkImageUsageFlags>(-1);
+}
+
+auto gfx::vk_api::get_swap_chain_transform(
+    VkSurfaceCapabilitiesKHR& surface_capabilities)
+    -> VkSurfaceTransformFlagBitsKHR
+{
+  // Sometimes images must be transformed before they are presented (i.e. due to
+  // device's orienation being other than default orientation) If the specified
+  // transform is other than current transform, presentation engine will
+  // transform image during presentation operation; this operation may hit
+  // performance on some platforms Here we don't want any transformations to
+  // occur so if the identity transform is supported use it otherwise just use
+  // the same transform as current transform
+  if (surface_capabilities.supportedTransforms &
+      VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) {
+    return VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+  }
+  else {
+    return surface_capabilities.currentTransform;
+  }
+}
+
+auto gfx::vk_api::get_swap_chain_present_mode(
+    std::vector<VkPresentModeKHR>& present_modes) -> VkPresentModeKHR
+{
+  // FIFO present mode is always available
+  // MAILBOX is the lowest latency V-Sync enabled mode (something like
+  // triple-buffering) so use it if available
+  for (VkPresentModeKHR& present_mode : present_modes) {
+    if (present_mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+      return present_mode;
+    }
+  }
+  for (VkPresentModeKHR& present_mode : present_modes) {
+    if (present_mode == VK_PRESENT_MODE_FIFO_KHR) {
+      return present_mode;
+    }
+  }
+  std::cout << "FIFO present mode is not supported by the swap chain!"
+            << std::endl;
+  return static_cast<VkPresentModeKHR>(-1);
+}
+
 auto gfx::load_backend() -> void { vk_api::initialize(); }
 
 auto gfx::unload_backend() -> void { vk_api::destroy(); }
@@ -509,6 +817,22 @@ auto gfx::print_device_name(vk_api::VulkanDevice device) -> void
 
 auto gfx::destroy_device(vk_api::VulkanDevice device) -> void
 {
+  if (device.logical_device != VK_NULL_HANDLE) {
+    device.vkDeviceWaitIdle(device.logical_device);
+  }
+  if (device.image_available_semaphore != VK_NULL_HANDLE) {
+    device.vkDestroySemaphore(device.logical_device,
+                              device.image_available_semaphore, nullptr);
+  }
+  if (device.rendering_finished_semaphore != VK_NULL_HANDLE) {
+    device.vkDestroySemaphore(device.logical_device,
+                              device.rendering_finished_semaphore, nullptr);
+  }
+  if (device.swap_chain != VK_NULL_HANDLE) {
+    device.vkDestroySwapchainKHR(device.logical_device, device.swap_chain,
+                                 nullptr);
+  }
+
   device.vkDestroyDevice(device.logical_device, nullptr);
   vk_api::vkDestroySurfaceKHR(vk_api::VK_INSTANCE, device.surface, nullptr);
 }
@@ -523,3 +847,5 @@ auto gfx::destroy_device(const Device& device) -> void
   device.self_->destroy_();
   std::cout << "Device destroyed.\n";
 }
+
+auto gfx::create_swap_chain(const Device& device) -> void {}

@@ -72,6 +72,9 @@ struct VulkanDevice {
   VkQueue graphics_queue;
   VkQueue present_queue;
   VkSurfaceKHR surface;
+  VkSemaphore image_available_semaphore;
+  VkSemaphore rendering_finished_semaphore;
+  VkSwapchainKHR swap_chain;
 
   // ************************************************************ //
   // Device level functions                                       //
@@ -119,6 +122,20 @@ auto check_extension_availability(
     const char* extension_name,
     const std::vector<VkExtensionProperties>& available_extensions) -> bool;
 auto create_window_surface(os::WindowParameters window) -> VkSurfaceKHR;
+auto create_semaphore(VulkanDevice& device) -> VkSemaphore;
+auto create_device_swap_chain(VulkanDevice& device) -> void;
+auto get_swap_chain_num_images(VkSurfaceCapabilitiesKHR& surface_capabilities)
+    -> uint32_t;
+auto get_swap_chain_format(std::vector<VkSurfaceFormatKHR>& surface_formats)
+    -> VkSurfaceFormatKHR;
+auto get_swap_chain_extent(VkSurfaceCapabilitiesKHR& surface_capabilities)
+    -> VkExtent2D;
+auto get_swap_chain_usage_flags(VkSurfaceCapabilitiesKHR& surface_capabilities)
+    -> VkImageUsageFlags;
+auto get_swap_chain_transform(VkSurfaceCapabilitiesKHR& surface_capabilities)
+    -> VkSurfaceTransformFlagBitsKHR;
+auto get_swap_chain_present_mode(std::vector<VkPresentModeKHR>& present_modes)
+    -> VkPresentModeKHR;
 
 }  // namespace gfx::vk_api
 
@@ -135,12 +152,14 @@ class Device {
 
   friend auto print_device_name(const Device& device) -> void;
   friend auto destroy_device(const Device& device) -> void;
+  friend auto create_swap_chain(const Device& device) -> void;
 
  private:
   struct Concept {
     virtual ~Concept() = default;
     virtual auto print_name_() -> void = 0;
     virtual auto destroy_() -> void = 0;
+    virtual auto create_swap_chain_() -> void = 0;
   };
 
   template <typename T>
@@ -150,6 +169,10 @@ class Device {
 
     auto print_name_() -> void override { print_device_name(user_model_); }
     auto destroy_() -> void override { destroy_device(user_model_); }
+    auto create_swap_chain_() -> void override
+    {
+      create_swap_chain(user_model_);
+    }
 
     T user_model_;
   };
